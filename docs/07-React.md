@@ -777,9 +777,315 @@ const usersSlice = createSlice({
 
 ---
 
+### 11. React 状态管理库有哪些？区别是什么？
+
+**答案：**
+
+React 生态中有多种状态管理方案，主要包括：
+
+#### 1. Redux / Redux Toolkit
+
+**特点：**
+- 单一数据源（Single Store）
+- 状态只读，通过纯函数（Reducer）修改
+- 严格的单向数据流
+- 强大的 DevTools 支持
+- 中间件生态丰富（redux-thunk、redux-saga）
+
+```jsx
+// Redux Toolkit 示例
+import { createSlice, configureStore } from '@reduxjs/toolkit';
+
+const counterSlice = createSlice({
+  name: 'counter',
+  initialState: { value: 0 },
+  reducers: {
+    increment: state => { state.value += 1 },
+    decrement: state => { state.value -= 1 },
+  },
+});
+
+const store = configureStore({
+  reducer: { counter: counterSlice.reducer },
+});
+
+// 组件中使用
+function Counter() {
+  const count = useSelector(state => state.counter.value);
+  const dispatch = useDispatch();
+  return <button onClick={() => dispatch(increment())}>{count}</button>;
+}
+```
+
+**适用场景：** 大型应用、需要严格状态追踪、团队协作
+
+---
+
+#### 2. Zustand
+
+**特点：**
+- 极简 API，学习成本低
+- 不需要 Provider 包裹
+- 支持直接修改状态
+- 体积小（~1KB）
+- 支持中间件
+
+```jsx
+import { create } from 'zustand';
+
+// 创建 store
+const useStore = create((set, get) => ({
+  count: 0,
+  increment: () => set(state => ({ count: state.count + 1 })),
+  decrement: () => set(state => ({ count: state.count - 1 })),
+  reset: () => set({ count: 0 }),
+  // 异步操作
+  fetchData: async () => {
+    const res = await fetch('/api/data');
+    const data = await res.json();
+    set({ data });
+  },
+}));
+
+// 组件中使用（无需 Provider）
+function Counter() {
+  const { count, increment } = useStore();
+  return <button onClick={increment}>{count}</button>;
+}
+
+// 选择性订阅，避免不必要渲染
+function Count() {
+  const count = useStore(state => state.count);
+  return <span>{count}</span>;
+}
+```
+
+**适用场景：** 中小型应用、追求简洁、快速开发
+
+---
+
+#### 3. MobX
+
+**特点：**
+- 响应式编程（类似 Vue）
+- 可变状态，自动追踪依赖
+- 代码直观，心智负担小
+- 支持装饰器语法
+- 自动优化渲染
+
+```jsx
+import { makeAutoObservable } from 'mobx';
+import { observer } from 'mobx-react-lite';
+
+// 创建 store
+class CounterStore {
+  count = 0;
+
+  constructor() {
+    makeAutoObservable(this);
+  }
+
+  increment() {
+    this.count++;
+  }
+
+  decrement() {
+    this.count--;
+  }
+
+  get doubleCount() {
+    return this.count * 2;  // 计算属性
+  }
+}
+
+const counterStore = new CounterStore();
+
+// 组件中使用
+const Counter = observer(() => {
+  return (
+    <div>
+      <span>{counterStore.count}</span>
+      <span>Double: {counterStore.doubleCount}</span>
+      <button onClick={() => counterStore.increment()}>+</button>
+    </div>
+  );
+});
+```
+
+**适用场景：** 喜欢 OOP 风格、复杂状态逻辑、需要计算属性
+
+---
+
+#### 4. Jotai
+
+**特点：**
+- 原子化状态管理
+- 极简 API，类似 useState
+- 自动代码分割
+- 支持 Suspense
+- 派生状态简单
+
+```jsx
+import { atom, useAtom } from 'jotai';
+
+// 定义原子状态
+const countAtom = atom(0);
+const doubleAtom = atom(get => get(countAtom) * 2);  // 派生状态
+
+// 异步原子
+const userAtom = atom(async () => {
+  const res = await fetch('/api/user');
+  return res.json();
+});
+
+// 组件中使用
+function Counter() {
+  const [count, setCount] = useAtom(countAtom);
+  const [double] = useAtom(doubleAtom);
+
+  return (
+    <div>
+      <span>{count} (double: {double})</span>
+      <button onClick={() => setCount(c => c + 1)}>+</button>
+    </div>
+  );
+}
+```
+
+**适用场景：** 细粒度状态、需要状态派生、喜欢原子化思维
+
+---
+
+#### 5. Recoil
+
+**特点：**
+- Facebook 官方出品
+- 原子化 + 选择器
+- 与 React 并发模式兼容
+- 支持异步状态
+- 状态快照和时间旅行
+
+```jsx
+import { atom, selector, useRecoilState, useRecoilValue } from 'recoil';
+
+// 定义 atom
+const countState = atom({
+  key: 'countState',
+  default: 0,
+});
+
+// 定义 selector（派生状态）
+const doubleState = selector({
+  key: 'doubleState',
+  get: ({ get }) => get(countState) * 2,
+});
+
+// 组件中使用
+function Counter() {
+  const [count, setCount] = useRecoilState(countState);
+  const double = useRecoilValue(doubleState);
+
+  return (
+    <div>
+      <span>{count} (double: {double})</span>
+      <button onClick={() => setCount(count + 1)}>+</button>
+    </div>
+  );
+}
+
+// 需要 RecoilRoot 包裹
+function App() {
+  return (
+    <RecoilRoot>
+      <Counter />
+    </RecoilRoot>
+  );
+}
+```
+
+**适用场景：** 复杂状态图、需要状态快照、大型 React 应用
+
+---
+
+#### 6. React Context + useReducer
+
+**特点：**
+- React 内置，无需额外依赖
+- 适合简单场景
+- 配合 useReducer 可实现类 Redux 模式
+
+```jsx
+const CountContext = createContext();
+
+function countReducer(state, action) {
+  switch (action.type) {
+    case 'increment': return { count: state.count + 1 };
+    case 'decrement': return { count: state.count - 1 };
+    default: return state;
+  }
+}
+
+function CountProvider({ children }) {
+  const [state, dispatch] = useReducer(countReducer, { count: 0 });
+  return (
+    <CountContext.Provider value={{ state, dispatch }}>
+      {children}
+    </CountContext.Provider>
+  );
+}
+
+function Counter() {
+  const { state, dispatch } = useContext(CountContext);
+  return <button onClick={() => dispatch({ type: 'increment' })}>{state.count}</button>;
+}
+```
+
+**适用场景：** 简单状态共享、避免 prop drilling
+
+---
+
+#### 对比总结表
+
+| 特性 | Redux | Zustand | MobX | Jotai | Recoil | Context |
+|------|-------|---------|------|-------|--------|---------|
+| **体积** | 大 | 极小(~1KB) | 中等 | 小(~3KB) | 中等 | 内置 |
+| **学习成本** | 高 | 低 | 中 | 低 | 中 | 低 |
+| **样板代码** | 多 | 少 | 少 | 极少 | 少 | 中 |
+| **DevTools** | 优秀 | 支持 | 支持 | 支持 | 支持 | 有限 |
+| **TypeScript** | 好 | 优秀 | 好 | 优秀 | 好 | 好 |
+| **状态模型** | 单 Store | 多 Store | 多 Store | 原子化 | 原子化 | 单 Context |
+| **更新方式** | 不可变 | 不可变 | 可变 | 不可变 | 不可变 | 不可变 |
+| **异步处理** | 中间件 | 内置 | 内置 | 内置 | 内置 | 手动 |
+| **性能优化** | 需手动 | 自动 | 自动 | 自动 | 自动 | 需手动 |
+| **Provider** | 需要 | 不需要 | 需要 | 需要 | 需要 | 需要 |
+
+---
+
+#### 如何选择？
+
+```
+项目规模？
+├── 小型项目 → Zustand 或 Jotai
+├── 中型项目 → Zustand 或 MobX
+└── 大型项目 → Redux Toolkit 或 Recoil
+
+团队背景？
+├── 熟悉 Vue → MobX（响应式）
+├── 熟悉 Redux → Redux Toolkit
+└── 新团队 → Zustand（最简单）
+
+状态特点？
+├── 简单共享 → Context + useReducer
+├── 复杂派生 → Jotai 或 Recoil
+├── 需要时间旅行 → Redux
+└── 细粒度更新 → Jotai / Zustand
+```
+
+---
+
 ## 性能优化
 
-### 11. React 性能优化方法
+### 12. React 性能优化方法
 
 **答案：**
 

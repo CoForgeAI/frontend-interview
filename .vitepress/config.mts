@@ -34,6 +34,7 @@ export default defineConfig({
         items: [
           { text: 'Vue', link: '/docs/06-Vue' },
           { text: 'React', link: '/docs/07-React' },
+          { text: 'Next.js', link: '/docs/17-NextJS' },
         ]
       },
       {
@@ -86,6 +87,7 @@ export default defineConfig({
           items: [
             { text: 'Vue', link: '/docs/06-Vue' },
             { text: 'React', link: '/docs/07-React' },
+            { text: 'Next.js', link: '/docs/17-NextJS' },
           ]
         },
         {
