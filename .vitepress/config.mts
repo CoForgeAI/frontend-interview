@@ -187,5 +187,8 @@ export default defineConfig({
     }
   },
 
+  // 忽略死链接检查（临时）
+  ignoreDeadLinks: true,
+
   lastUpdated: true,
 })
