@@ -7514,3 +7514,1845 @@ function BlogPost({ post }) {
 // - 函数组件不再接收第二个 context 参数
 // - 移除了一些旧的 API（如 createFactory）
 ```
+
+---
+
+## 工程化与实战
+
+### 31. React 项目中如何做代码拆分？
+
+**答案：**
+
+代码拆分是优化首屏加载的重要手段，React 提供了多种方式：
+
+**1. React.lazy + Suspense（路由级别）：**
+
+```jsx
+import { lazy, Suspense } from 'react';
+import { Routes, Route } from 'react-router-dom';
+
+// 路由懒加载
+const Home = lazy(() => import('./pages/Home'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Settings = lazy(() => import('./pages/Settings'));
+
+function App() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
+    </Suspense>
+  );
+}
+```
+
+**2. 组件级别懒加载：**
+
+```jsx
+// 复杂组件懒加载
+const HeavyChart = lazy(() => import('./components/HeavyChart'));
+const RichTextEditor = lazy(() => import('./components/RichTextEditor'));
+
+function Dashboard() {
+  const [showChart, setShowChart] = useState(false);
+
+  return (
+    <div>
+      <button onClick={() => setShowChart(true)}>显示图表</button>
+      {showChart && (
+        <Suspense fallback={<ChartSkeleton />}>
+          <HeavyChart />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+```
+
+**3. 动态导入（非组件）：**
+
+```jsx
+// 按需加载第三方库
+async function handleExport() {
+  const { exportToExcel } = await import('./utils/export');
+  exportToExcel(data);
+}
+
+// 加载大型库
+async function handlePDF() {
+  const pdfMake = await import('pdfmake/build/pdfmake');
+  pdfMake.createPdf(docDefinition).download();
+}
+```
+
+**4. Vite 分包策略：**
+
+```js
+// vite.config.js
+export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // 第三方库单独打包
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-router': ['react-router-dom'],
+          'vendor-ui': ['antd', '@ant-design/icons'],
+          'vendor-charts': ['echarts', 'recharts'],
+        },
+      },
+    },
+  },
+});
+```
+
+**5. 预加载和预获取：**
+
+```jsx
+// 鼠标悬停时预加载
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+
+function NavLink() {
+  const prefetch = () => {
+    import('./pages/Dashboard'); // 提前加载
+  };
+
+  return (
+    <Link to="/dashboard" onMouseEnter={prefetch}>
+      Dashboard
+    </Link>
+  );
+}
+
+// 或使用 webpackPrefetch
+const About = lazy(() => import(
+  /* webpackPrefetch: true */ './pages/About'
+));
+```
+
+---
+
+### 32. React 项目中如何处理请求取消？
+
+**答案：**
+
+请求取消在组件卸载、竞态条件等场景非常重要。
+
+**1. 使用 AbortController：**
+
+```jsx
+function UserList() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchUsers() {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/users', {
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        setUsers(data);
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log('请求被取消');
+        } else {
+          console.error('请求失败:', err);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchUsers();
+
+    // 组件卸载时取消请求
+    return () => controller.abort();
+  }, []);
+
+  return <ul>{users.map(u => <li key={u.id}>{u.name}</li>)}</ul>;
+}
+```
+
+**2. 封装请求 Hook：**
+
+```jsx
+function useFetch(url) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    async function fetchData() {
+      try {
+        setLoading(true);
+        const res = await fetch(url, { signal: controller.signal });
+        const json = await res.json();
+
+        if (isMounted) {
+          setData(json);
+          setError(null);
+        }
+      } catch (err) {
+        if (isMounted && err.name !== 'AbortError') {
+          setError(err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [url]);
+
+  return { data, loading, error };
+}
+```
+
+**3. 使用 Axios 取消：**
+
+```jsx
+import axios from 'axios';
+
+function SearchResults({ query }) {
+  const [results, setResults] = useState([]);
+
+  useEffect(() => {
+    const source = axios.CancelToken.source();
+
+    axios.get('/api/search', {
+      params: { q: query },
+      cancelToken: source.token,
+    })
+      .then(res => setResults(res.data))
+      .catch(err => {
+        if (!axios.isCancel(err)) {
+          console.error(err);
+        }
+      });
+
+    return () => source.cancel('组件卸载，取消请求');
+  }, [query]);
+
+  return <ResultList results={results} />;
+}
+```
+
+**4. 处理竞态条件：**
+
+```jsx
+function SearchBox() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const latestRequest = useRef(0);
+
+  useEffect(() => {
+    if (!query) return;
+
+    const requestId = ++latestRequest.current;
+
+    fetch(`/api/search?q=${query}`)
+      .then(res => res.json())
+      .then(data => {
+        // 只处理最新的请求结果
+        if (requestId === latestRequest.current) {
+          setResults(data);
+        }
+      });
+  }, [query]);
+
+  return (
+    <div>
+      <input value={query} onChange={e => setQuery(e.target.value)} />
+      <ul>{results.map(r => <li key={r.id}>{r.name}</li>)}</ul>
+    </div>
+  );
+}
+```
+
+**5. 使用 React Query / SWR：**
+
+```jsx
+import { useQuery } from '@tanstack/react-query';
+
+function Users() {
+  // 自动处理请求取消、缓存、重试
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['users'],
+    queryFn: async ({ signal }) => {
+      const res = await fetch('/api/users', { signal });
+      return res.json();
+    },
+  });
+
+  if (isLoading) return <Loading />;
+  if (error) return <Error error={error} />;
+  return <UserList users={data} />;
+}
+```
+
+---
+
+### 33. React 中如何做权限控制？
+
+**答案：**
+
+权限控制包括路由权限、组件权限、按钮权限等层面。
+
+**1. 路由权限控制：**
+
+```jsx
+// 权限路由组件
+function PrivateRoute({ children, requiredRole }) {
+  const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (requiredRole && user.role !== requiredRole) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  return children;
+}
+
+// 使用
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/dashboard" element={
+        <PrivateRoute>
+          <Dashboard />
+        </PrivateRoute>
+      } />
+      <Route path="/admin" element={
+        <PrivateRoute requiredRole="admin">
+          <AdminPanel />
+        </PrivateRoute>
+      } />
+    </Routes>
+  );
+}
+```
+
+**2. 动态路由配置：**
+
+```jsx
+// 根据用户权限生成路由
+const allRoutes = [
+  { path: '/', element: <Home />, public: true },
+  { path: '/dashboard', element: <Dashboard />, roles: ['user', 'admin'] },
+  { path: '/admin', element: <Admin />, roles: ['admin'] },
+  { path: '/settings', element: <Settings />, roles: ['user', 'admin'] },
+];
+
+function AppRoutes() {
+  const { user } = useAuth();
+
+  const accessibleRoutes = allRoutes.filter(route => {
+    if (route.public) return true;
+    if (!user) return false;
+    return route.roles?.includes(user.role);
+  });
+
+  return (
+    <Routes>
+      {accessibleRoutes.map(route => (
+        <Route key={route.path} path={route.path} element={route.element} />
+      ))}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+```
+
+**3. 组件级权限控制：**
+
+```jsx
+// 权限组件
+function Authorized({ permission, children, fallback = null }) {
+  const { permissions } = useAuth();
+
+  if (!permissions.includes(permission)) {
+    return fallback;
+  }
+
+  return children;
+}
+
+// 使用
+function UserManagement() {
+  return (
+    <div>
+      <UserList />
+
+      <Authorized permission="user:create">
+        <Button>新建用户</Button>
+      </Authorized>
+
+      <Authorized permission="user:delete" fallback={<DisabledButton />}>
+        <Button danger>删除用户</Button>
+      </Authorized>
+    </div>
+  );
+}
+```
+
+**4. 自定义 Hook 权限检查：**
+
+```jsx
+function usePermission(permission) {
+  const { permissions } = useAuth();
+  return permissions.includes(permission);
+}
+
+function useRole(requiredRole) {
+  const { user } = useAuth();
+  return user?.role === requiredRole;
+}
+
+// 使用
+function ActionButtons() {
+  const canEdit = usePermission('article:edit');
+  const canDelete = usePermission('article:delete');
+  const isAdmin = useRole('admin');
+
+  return (
+    <div>
+      {canEdit && <Button>编辑</Button>}
+      {canDelete && <Button danger>删除</Button>}
+      {isAdmin && <Button>管理员操作</Button>}
+    </div>
+  );
+}
+```
+
+**5. 高阶组件方式：**
+
+```jsx
+function withPermission(WrappedComponent, permission) {
+  return function PermissionWrapper(props) {
+    const { permissions } = useAuth();
+
+    if (!permissions.includes(permission)) {
+      return null;
+    }
+
+    return <WrappedComponent {...props} />;
+  };
+}
+
+// 使用
+const AdminButton = withPermission(Button, 'admin:access');
+```
+
+**6. 指令式权限（类 Vue v-permission）：**
+
+```jsx
+// 权限指令组件
+function Permission({ value, children }) {
+  const { checkPermission } = useAuth();
+
+  const hasPermission = Array.isArray(value)
+    ? value.some(p => checkPermission(p))
+    : checkPermission(value);
+
+  return hasPermission ? children : null;
+}
+
+// 使用
+<Permission value="user:edit">
+  <Button>编辑</Button>
+</Permission>
+
+<Permission value={['admin', 'super-admin']}>
+  <AdminPanel />
+</Permission>
+```
+
+---
+
+### 34. React 中如何做主题切换？
+
+**答案：**
+
+**1. CSS 变量 + Context：**
+
+```jsx
+// 主题配置
+const themes = {
+  light: {
+    '--bg-color': '#ffffff',
+    '--text-color': '#333333',
+    '--primary-color': '#1890ff',
+  },
+  dark: {
+    '--bg-color': '#1a1a1a',
+    '--text-color': '#ffffff',
+    '--primary-color': '#177ddc',
+  },
+};
+
+// 主题 Context
+const ThemeContext = createContext();
+
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState('light');
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const themeVars = themes[theme];
+
+    Object.entries(themeVars).forEach(([key, value]) => {
+      root.style.setProperty(key, value);
+    });
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+// CSS 使用变量
+// .container { background: var(--bg-color); color: var(--text-color); }
+```
+
+**2. CSS-in-JS（styled-components）：**
+
+```jsx
+import styled, { ThemeProvider } from 'styled-components';
+
+const lightTheme = {
+  bg: '#ffffff',
+  text: '#333333',
+  primary: '#1890ff',
+};
+
+const darkTheme = {
+  bg: '#1a1a1a',
+  text: '#ffffff',
+  primary: '#177ddc',
+};
+
+const Container = styled.div`
+  background: ${props => props.theme.bg};
+  color: ${props => props.theme.text};
+`;
+
+function App() {
+  const [isDark, setIsDark] = useState(false);
+
+  return (
+    <ThemeProvider theme={isDark ? darkTheme : lightTheme}>
+      <Container>
+        <button onClick={() => setIsDark(!isDark)}>
+          切换主题
+        </button>
+      </Container>
+    </ThemeProvider>
+  );
+}
+```
+
+**3. Tailwind CSS + class 切换：**
+
+```jsx
+function App() {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark);
+  }, [isDark]);
+
+  return (
+    <div className="bg-white dark:bg-gray-900 text-black dark:text-white">
+      <button onClick={() => setIsDark(!isDark)}>
+        切换主题
+      </button>
+    </div>
+  );
+}
+```
+
+**4. 系统主题跟随：**
+
+```jsx
+function useSystemTheme() {
+  const [isDark, setIsDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const handler = (e) => setIsDark(e.matches);
+    mediaQuery.addEventListener('change', handler);
+
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  return isDark;
+}
+
+function App() {
+  const systemDark = useSystemTheme();
+  const [userPreference, setUserPreference] = useState(null); // null = 跟随系统
+
+  const isDark = userPreference ?? systemDark;
+
+  return (
+    <ThemeProvider theme={isDark ? 'dark' : 'light'}>
+      <select
+        value={userPreference ?? 'system'}
+        onChange={e => {
+          const v = e.target.value;
+          setUserPreference(v === 'system' ? null : v === 'dark');
+        }}
+      >
+        <option value="system">跟随系统</option>
+        <option value="light">浅色</option>
+        <option value="dark">深色</option>
+      </select>
+    </ThemeProvider>
+  );
+}
+```
+
+**5. 持久化主题选择：**
+
+```jsx
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'system';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+
+    const isDark = theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    document.documentElement.classList.toggle('dark', isDark);
+  }, [theme]);
+
+  return [theme, setTheme];
+}
+```
+
+---
+
+### 35. React 项目中如何做埋点统计？
+
+**答案：**
+
+**1. 声明式埋点组件：**
+
+```jsx
+// 曝光埋点
+function Exposure({ eventName, data, children }) {
+  const ref = useRef();
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          trackEvent(eventName, data);
+          observer.disconnect(); // 只上报一次
+        }
+      },
+      { threshold: 0.5 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, [eventName, data]);
+
+  return <div ref={ref}>{children}</div>;
+}
+
+// 使用
+<Exposure eventName="banner_view" data={{ bannerId: 1 }}>
+  <Banner />
+</Exposure>
+```
+
+**2. 点击埋点 Hook：**
+
+```jsx
+function useTrackClick(eventName, data) {
+  return useCallback((e) => {
+    trackEvent(eventName, {
+      ...data,
+      timestamp: Date.now(),
+      path: window.location.pathname,
+    });
+  }, [eventName, data]);
+}
+
+// 使用
+function Button({ trackName, trackData, onClick, children }) {
+  const handleTrack = useTrackClick(trackName, trackData);
+
+  const handleClick = (e) => {
+    handleTrack(e);
+    onClick?.(e);
+  };
+
+  return <button onClick={handleClick}>{children}</button>;
+}
+
+<Button
+  trackName="buy_click"
+  trackData={{ productId: 123, price: 99 }}
+  onClick={handleBuy}
+>
+  立即购买
+</Button>
+```
+
+**3. 页面 PV/UV 统计：**
+
+```jsx
+// 路由变化埋点
+function usePageTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    trackEvent('page_view', {
+      path: location.pathname,
+      search: location.search,
+      referrer: document.referrer,
+      timestamp: Date.now(),
+    });
+  }, [location.pathname]);
+}
+
+function App() {
+  usePageTracker();
+  return <Routes>...</Routes>;
+}
+```
+
+**4. 错误监控：**
+
+```jsx
+class ErrorBoundary extends Component {
+  componentDidCatch(error, errorInfo) {
+    trackEvent('error', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      path: window.location.pathname,
+    });
+  }
+
+  render() {
+    return this.props.children;
+  }
+}
+
+// 全局错误监控
+useEffect(() => {
+  const handleError = (event) => {
+    trackEvent('js_error', {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  };
+
+  const handleUnhandledRejection = (event) => {
+    trackEvent('promise_error', {
+      reason: event.reason?.message || String(event.reason),
+    });
+  };
+
+  window.addEventListener('error', handleError);
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+  return () => {
+    window.removeEventListener('error', handleError);
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  };
+}, []);
+```
+
+**5. 性能监控：**
+
+```jsx
+function usePerformanceTracker() {
+  useEffect(() => {
+    // 等待页面加载完成
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const timing = performance.getEntriesByType('navigation')[0];
+        const paint = performance.getEntriesByType('paint');
+
+        trackEvent('performance', {
+          // DNS 查询
+          dns: timing.domainLookupEnd - timing.domainLookupStart,
+          // TCP 连接
+          tcp: timing.connectEnd - timing.connectStart,
+          // 首字节时间
+          ttfb: timing.responseStart - timing.requestStart,
+          // DOM 解析
+          domParse: timing.domContentLoadedEventEnd - timing.responseEnd,
+          // 页面加载
+          loadTime: timing.loadEventEnd - timing.navigationStart,
+          // FCP
+          fcp: paint.find(p => p.name === 'first-contentful-paint')?.startTime,
+        });
+      }, 0);
+    });
+  }, []);
+}
+```
+
+**6. 统一埋点管理：**
+
+```jsx
+// tracker.js
+class Tracker {
+  constructor() {
+    this.queue = [];
+    this.timer = null;
+  }
+
+  track(eventName, data) {
+    this.queue.push({
+      event: eventName,
+      data,
+      timestamp: Date.now(),
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+    });
+
+    this.scheduleFlush();
+  }
+
+  scheduleFlush() {
+    if (this.timer) return;
+
+    this.timer = setTimeout(() => {
+      this.flush();
+      this.timer = null;
+    }, 1000);
+  }
+
+  flush() {
+    if (this.queue.length === 0) return;
+
+    const events = [...this.queue];
+    this.queue = [];
+
+    // 使用 sendBeacon 确保数据发送
+    navigator.sendBeacon('/api/track', JSON.stringify(events));
+  }
+}
+
+export const tracker = new Tracker();
+
+// 页面卸载前发送
+window.addEventListener('beforeunload', () => {
+  tracker.flush();
+});
+```
+
+---
+
+### 36. React 中如何避免首屏白屏？
+
+**答案：**
+
+**1. 服务端渲染（SSR）：**
+
+```jsx
+// Next.js 示例
+export async function getServerSideProps() {
+  const data = await fetchInitialData();
+  return { props: { data } };
+}
+
+function Page({ data }) {
+  return <Content data={data} />;
+}
+```
+
+**2. 静态 HTML 骨架屏：**
+
+```html
+<!-- index.html -->
+<div id="root">
+  <!-- 内联骨架屏，打包时会被替换 -->
+  <div class="skeleton">
+    <div class="skeleton-header"></div>
+    <div class="skeleton-content"></div>
+  </div>
+  <style>
+    .skeleton { padding: 20px; }
+    .skeleton-header {
+      height: 60px;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</div>
+```
+
+**3. 内联关键 CSS：**
+
+```js
+// vite.config.js
+import { createHtmlPlugin } from 'vite-plugin-html';
+
+export default {
+  plugins: [
+    createHtmlPlugin({
+      minify: true,
+      inject: {
+        data: {
+          inlineStyle: `<style>${criticalCSS}</style>`,
+        },
+      },
+    }),
+  ],
+};
+```
+
+**4. 预加载关键资源：**
+
+```html
+<head>
+  <!-- 预加载关键 JS -->
+  <link rel="modulepreload" href="/src/main.js">
+
+  <!-- 预加载字体 -->
+  <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+
+  <!-- 预连接 API 域名 -->
+  <link rel="preconnect" href="https://api.example.com">
+</head>
+```
+
+**5. 首屏数据预取：**
+
+```jsx
+// 在 HTML 中注入初始数据
+<script>
+  window.__INITIAL_DATA__ = ${JSON.stringify(initialData)};
+</script>
+
+// React 中使用
+function App() {
+  const [data] = useState(() => window.__INITIAL_DATA__ || null);
+
+  return data ? <Content data={data} /> : <Loading />;
+}
+```
+
+**6. 渐进式加载：**
+
+```jsx
+function App() {
+  return (
+    <>
+      {/* 关键内容直接渲染 */}
+      <Header />
+      <HeroSection />
+
+      {/* 非关键内容延迟加载 */}
+      <Suspense fallback={<Skeleton />}>
+        <LazyContent />
+      </Suspense>
+
+      {/* 更晚的内容 */}
+      <Suspense fallback={null}>
+        <LazyFooter />
+      </Suspense>
+    </>
+  );
+}
+```
+
+**7. 分析和监控：**
+
+```jsx
+// 监控白屏时间
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    if (entry.name === 'first-contentful-paint') {
+      console.log('FCP:', entry.startTime);
+      if (entry.startTime > 3000) {
+        // 上报白屏问题
+        reportIssue('slow_fcp', { time: entry.startTime });
+      }
+    }
+  }
+});
+
+observer.observe({ entryTypes: ['paint'] });
+```
+
+---
+
+### 37. 如何设计一个高复用的 React 组件？
+
+**答案：**
+
+**1. 单一职责原则：**
+
+```jsx
+// ❌ 职责不清
+function UserCard({ user, onEdit, onDelete, showActions, isAdmin }) {
+  // 混合了展示、编辑、删除、权限逻辑
+}
+
+// ✅ 职责分离
+function UserAvatar({ src, name }) { ... }
+function UserInfo({ name, email }) { ... }
+function UserActions({ onEdit, onDelete }) { ... }
+
+function UserCard({ user }) {
+  return (
+    <div>
+      <UserAvatar src={user.avatar} name={user.name} />
+      <UserInfo name={user.name} email={user.email} />
+    </div>
+  );
+}
+```
+
+**2. 组合优于继承（Composition）：**
+
+```jsx
+// 基础 Button
+function Button({ variant, size, children, ...props }) {
+  return (
+    <button className={cn(styles.button, styles[variant], styles[size])} {...props}>
+      {children}
+    </button>
+  );
+}
+
+// 组合出特定功能按钮
+function IconButton({ icon, children, ...props }) {
+  return (
+    <Button {...props}>
+      <Icon name={icon} />
+      {children}
+    </Button>
+  );
+}
+
+function LoadingButton({ loading, children, ...props }) {
+  return (
+    <Button disabled={loading} {...props}>
+      {loading ? <Spinner /> : children}
+    </Button>
+  );
+}
+```
+
+**3. 受控与非受控兼容：**
+
+```jsx
+function Input({ value, defaultValue, onChange, ...props }) {
+  // 支持受控和非受控两种模式
+  const [internalValue, setInternalValue] = useState(defaultValue ?? '');
+  const isControlled = value !== undefined;
+  const currentValue = isControlled ? value : internalValue;
+
+  const handleChange = (e) => {
+    if (!isControlled) {
+      setInternalValue(e.target.value);
+    }
+    onChange?.(e);
+  };
+
+  return <input value={currentValue} onChange={handleChange} {...props} />;
+}
+```
+
+**4. 渲染控制（Render Props / Children）：**
+
+```jsx
+// 灵活的渲染方式
+function List({ items, renderItem, emptyText = '暂无数据' }) {
+  if (items.length === 0) {
+    return <div>{emptyText}</div>;
+  }
+
+  return (
+    <ul>
+      {items.map((item, index) => (
+        <li key={item.id ?? index}>
+          {renderItem(item, index)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// 使用
+<List
+  items={users}
+  renderItem={(user) => <UserCard user={user} />}
+  emptyText="没有用户"
+/>
+```
+
+**5. 合理的默认值和类型：**
+
+```tsx
+interface ButtonProps {
+  variant?: 'primary' | 'secondary' | 'danger';
+  size?: 'small' | 'medium' | 'large';
+  disabled?: boolean;
+  loading?: boolean;
+  children: React.ReactNode;
+  onClick?: (e: React.MouseEvent) => void;
+}
+
+function Button({
+  variant = 'primary',
+  size = 'medium',
+  disabled = false,
+  loading = false,
+  children,
+  onClick,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      disabled={disabled || loading}
+      onClick={onClick}
+      {...props}
+    >
+      {loading ? <Spinner size={size} /> : children}
+    </button>
+  );
+}
+```
+
+**6. 样式可定制：**
+
+```jsx
+function Card({ className, style, children, ...props }) {
+  return (
+    <div
+      className={cn(styles.card, className)}
+      style={style}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+// 使用
+<Card className="my-custom-card" style={{ maxWidth: 400 }}>
+  内容
+</Card>
+```
+
+**7. 转发 ref：**
+
+```jsx
+const Input = forwardRef(function Input({ label, error, ...props }, ref) {
+  return (
+    <div>
+      {label && <label>{label}</label>}
+      <input ref={ref} {...props} />
+      {error && <span className="error">{error}</span>}
+    </div>
+  );
+});
+
+// 使用
+const inputRef = useRef();
+<Input ref={inputRef} label="用户名" />
+```
+
+---
+
+### 38. 如何封装一个通用 Modal 组件？
+
+**答案：**
+
+```jsx
+import { createPortal } from 'react-dom';
+import { useEffect, useCallback } from 'react';
+
+function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  width = 520,
+  maskClosable = true,
+  keyboard = true,
+  destroyOnClose = false,
+  centered = false,
+}) {
+  // 键盘事件处理
+  useEffect(() => {
+    if (!open || !keyboard) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose?.();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, keyboard, onClose]);
+
+  // 锁定 body 滚动
+  useEffect(() => {
+    if (open) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [open]);
+
+  // 遮罩点击
+  const handleMaskClick = useCallback((e) => {
+    if (e.target === e.currentTarget && maskClosable) {
+      onClose?.();
+    }
+  }, [maskClosable, onClose]);
+
+  if (!open && destroyOnClose) {
+    return null;
+  }
+
+  const modalContent = (
+    <div
+      className={`modal-mask ${open ? 'visible' : ''}`}
+      onClick={handleMaskClick}
+      style={{ display: open ? 'flex' : 'none' }}
+    >
+      <div
+        className={`modal-content ${centered ? 'centered' : ''}`}
+        style={{ width }}
+        role="dialog"
+        aria-modal="true"
+      >
+        {/* Header */}
+        <div className="modal-header">
+          <span className="modal-title">{title}</span>
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="modal-body">
+          {children}
+        </div>
+
+        {/* Footer */}
+        {footer !== null && (
+          <div className="modal-footer">
+            {footer ?? (
+              <>
+                <button onClick={onClose}>取消</button>
+                <button className="primary" onClick={onClose}>
+                  确定
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
+}
+
+// 使用
+function App() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>打开弹窗</button>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="确认操作"
+        footer={
+          <>
+            <button onClick={() => setOpen(false)}>取消</button>
+            <button onClick={handleConfirm}>确认</button>
+          </>
+        }
+      >
+        <p>确定要执行此操作吗？</p>
+      </Modal>
+    </>
+  );
+}
+```
+
+**CSS 样式：**
+
+```css
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 100px;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.modal-mask.visible {
+  opacity: 1;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-content.centered {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.modal-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.modal-footer {
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+```
+
+**命令式调用：**
+
+```jsx
+// 创建命令式 API
+const modal = {
+  confirm: (config) => {
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+
+    const destroy = () => {
+      root.unmount();
+      div.remove();
+    };
+
+    const root = createRoot(div);
+    root.render(
+      <Modal
+        open={true}
+        onClose={destroy}
+        {...config}
+        footer={
+          <>
+            <button onClick={() => { config.onCancel?.(); destroy(); }}>
+              取消
+            </button>
+            <button onClick={() => { config.onOk?.(); destroy(); }}>
+              确定
+            </button>
+          </>
+        }
+      />
+    );
+
+    return { destroy };
+  },
+};
+
+// 使用
+modal.confirm({
+  title: '确认删除',
+  children: '确定要删除这条记录吗？',
+  onOk: () => handleDelete(),
+});
+```
+
+---
+
+### 39. React 中如何实现虚拟列表？
+
+**答案：**
+
+虚拟列表只渲染可视区域的元素，大幅提升大数据量列表的性能。
+
+**1. 基础实现原理：**
+
+```jsx
+function VirtualList({ items, itemHeight, containerHeight }) {
+  const [scrollTop, setScrollTop] = useState(0);
+
+  // 计算可见范围
+  const startIndex = Math.floor(scrollTop / itemHeight);
+  const endIndex = Math.min(
+    startIndex + Math.ceil(containerHeight / itemHeight) + 1,
+    items.length
+  );
+
+  // 可见项
+  const visibleItems = items.slice(startIndex, endIndex);
+
+  // 总高度（撑开滚动区域）
+  const totalHeight = items.length * itemHeight;
+
+  // 偏移量（定位可见项）
+  const offsetY = startIndex * itemHeight;
+
+  return (
+    <div
+      style={{ height: containerHeight, overflow: 'auto' }}
+      onScroll={(e) => setScrollTop(e.target.scrollTop)}
+    >
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        <div style={{ transform: `translateY(${offsetY}px)` }}>
+          {visibleItems.map((item, index) => (
+            <div key={startIndex + index} style={{ height: itemHeight }}>
+              {item.content}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+**2. 带缓冲区的优化版本：**
+
+```jsx
+function VirtualList({
+  items,
+  itemHeight,
+  containerHeight,
+  overscan = 3, // 上下额外渲染的数量
+}) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const containerRef = useRef();
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+  const endIndex = Math.min(
+    items.length,
+    Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan
+  );
+
+  const visibleItems = [];
+  for (let i = startIndex; i < endIndex; i++) {
+    visibleItems.push({
+      index: i,
+      item: items[i],
+      style: {
+        position: 'absolute',
+        top: i * itemHeight,
+        height: itemHeight,
+        width: '100%',
+      },
+    });
+  }
+
+  const handleScroll = useCallback((e) => {
+    setScrollTop(e.target.scrollTop);
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: containerHeight, overflow: 'auto' }}
+      onScroll={handleScroll}
+    >
+      <div style={{ height: items.length * itemHeight, position: 'relative' }}>
+        {visibleItems.map(({ index, item, style }) => (
+          <div key={index} style={style}>
+            {item.content}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**3. 动态高度虚拟列表：**
+
+```jsx
+function DynamicVirtualList({ items, estimatedItemHeight, containerHeight }) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const measuredHeights = useRef(new Map());
+  const containerRef = useRef();
+
+  // 获取项目高度
+  const getItemHeight = (index) => {
+    return measuredHeights.current.get(index) || estimatedItemHeight;
+  };
+
+  // 计算项目位置
+  const getItemOffset = (index) => {
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      offset += getItemHeight(i);
+    }
+    return offset;
+  };
+
+  // 测量元素高度
+  const measureItem = useCallback((index, element) => {
+    if (element) {
+      const height = element.getBoundingClientRect().height;
+      if (measuredHeights.current.get(index) !== height) {
+        measuredHeights.current.set(index, height);
+      }
+    }
+  }, []);
+
+  // 计算可见范围
+  const { startIndex, endIndex, totalHeight } = useMemo(() => {
+    let start = 0;
+    let offset = 0;
+
+    while (offset < scrollTop && start < items.length) {
+      offset += getItemHeight(start);
+      start++;
+    }
+    start = Math.max(0, start - 1);
+
+    let end = start;
+    let visibleHeight = 0;
+    while (visibleHeight < containerHeight && end < items.length) {
+      visibleHeight += getItemHeight(end);
+      end++;
+    }
+    end = Math.min(items.length, end + 1);
+
+    let total = 0;
+    for (let i = 0; i < items.length; i++) {
+      total += getItemHeight(i);
+    }
+
+    return { startIndex: start, endIndex: end, totalHeight: total };
+  }, [scrollTop, items.length, containerHeight]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: containerHeight, overflow: 'auto' }}
+      onScroll={(e) => setScrollTop(e.target.scrollTop)}
+    >
+      <div style={{ height: totalHeight, position: 'relative' }}>
+        {items.slice(startIndex, endIndex).map((item, i) => {
+          const index = startIndex + i;
+          return (
+            <div
+              key={index}
+              ref={(el) => measureItem(index, el)}
+              style={{
+                position: 'absolute',
+                top: getItemOffset(index),
+                width: '100%',
+              }}
+            >
+              {item.content}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+```
+
+**4. 使用 react-window 库：**
+
+```jsx
+import { FixedSizeList, VariableSizeList } from 'react-window';
+
+// 固定高度
+function FixedList({ items }) {
+  return (
+    <FixedSizeList
+      height={400}
+      width="100%"
+      itemCount={items.length}
+      itemSize={50}
+    >
+      {({ index, style }) => (
+        <div style={style}>{items[index].name}</div>
+      )}
+    </FixedSizeList>
+  );
+}
+
+// 动态高度
+function DynamicList({ items }) {
+  const getItemSize = (index) => items[index].height || 50;
+
+  return (
+    <VariableSizeList
+      height={400}
+      width="100%"
+      itemCount={items.length}
+      itemSize={getItemSize}
+    >
+      {({ index, style }) => (
+        <div style={style}>{items[index].content}</div>
+      )}
+    </VariableSizeList>
+  );
+}
+```
+
+---
+
+### 40. React 中如何安全地操作 DOM？
+
+**答案：**
+
+**1. 使用 useRef 获取 DOM 引用：**
+
+```jsx
+function TextInput() {
+  const inputRef = useRef(null);
+
+  const focusInput = () => {
+    inputRef.current?.focus();
+  };
+
+  const selectAll = () => {
+    inputRef.current?.select();
+  };
+
+  return (
+    <div>
+      <input ref={inputRef} type="text" />
+      <button onClick={focusInput}>聚焦</button>
+      <button onClick={selectAll}>全选</button>
+    </div>
+  );
+}
+```
+
+**2. 使用 useLayoutEffect 同步操作 DOM：**
+
+```jsx
+function Tooltip({ children, content }) {
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef();
+  const tooltipRef = useRef();
+
+  useLayoutEffect(() => {
+    if (triggerRef.current && tooltipRef.current) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const tooltipRect = tooltipRef.current.getBoundingClientRect();
+
+      setPosition({
+        top: triggerRect.top - tooltipRect.height - 8,
+        left: triggerRect.left + (triggerRect.width - tooltipRect.width) / 2,
+      });
+    }
+  }, [content]);
+
+  return (
+    <>
+      <span ref={triggerRef}>{children}</span>
+      <div
+        ref={tooltipRef}
+        style={{ position: 'fixed', top: position.top, left: position.left }}
+      >
+        {content}
+      </div>
+    </>
+  );
+}
+```
+
+**3. 使用 ResizeObserver 监听尺寸变化：**
+
+```jsx
+function useElementSize(ref) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      setSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      });
+    });
+
+    observer.observe(ref.current);
+
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return size;
+}
+
+function ResponsiveComponent() {
+  const containerRef = useRef();
+  const { width, height } = useElementSize(containerRef);
+
+  return (
+    <div ref={containerRef}>
+      容器尺寸: {width} x {height}
+    </div>
+  );
+}
+```
+
+**4. 使用 Portal 渲染到指定 DOM：**
+
+```jsx
+import { createPortal } from 'react-dom';
+
+function Modal({ children }) {
+  const modalRoot = document.getElementById('modal-root');
+
+  return createPortal(
+    <div className="modal">{children}</div>,
+    modalRoot
+  );
+}
+```
+
+**5. 使用 useImperativeHandle 暴露方法：**
+
+```jsx
+const VideoPlayer = forwardRef(function VideoPlayer(props, ref) {
+  const videoRef = useRef();
+
+  useImperativeHandle(ref, () => ({
+    play: () => videoRef.current?.play(),
+    pause: () => videoRef.current?.pause(),
+    seek: (time) => {
+      if (videoRef.current) {
+        videoRef.current.currentTime = time;
+      }
+    },
+    // 只暴露必要的方法，而不是整个 DOM 元素
+  }), []);
+
+  return <video ref={videoRef} {...props} />;
+});
+
+// 使用
+function App() {
+  const playerRef = useRef();
+
+  return (
+    <div>
+      <VideoPlayer ref={playerRef} src="video.mp4" />
+      <button onClick={() => playerRef.current.play()}>播放</button>
+      <button onClick={() => playerRef.current.pause()}>暂停</button>
+    </div>
+  );
+}
+```
+
+**6. 避免的反模式：**
+
+```jsx
+// ❌ 避免：直接操作 DOM
+function Bad() {
+  useEffect(() => {
+    document.getElementById('my-div').innerHTML = 'Hello';
+    document.querySelector('.btn').addEventListener('click', handler);
+  }, []);
+}
+
+// ✅ 推荐：使用 React 方式
+function Good() {
+  const [content, setContent] = useState('Hello');
+
+  return (
+    <div>{content}</div>
+    <button onClick={handler}>Click</button>
+  );
+}
+
+// ❌ 避免：在 render 中操作 DOM
+function Bad() {
+  const ref = useRef();
+  ref.current?.focus(); // 可能在 DOM 还没准备好时执行
+  return <input ref={ref} />;
+}
+
+// ✅ 推荐：在 useEffect/useLayoutEffect 中操作
+function Good() {
+  const ref = useRef();
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  return <input ref={ref} />;
+}
+```
