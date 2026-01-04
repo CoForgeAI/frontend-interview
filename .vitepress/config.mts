@@ -12,7 +12,7 @@ export default defineConfig({
   ],
 
   // 如果部署到 GitHub Pages 的子路径，需要设置 base
-  // base: '/frontend-interview/',
+  base: '/frontend-interview/',
 
   themeConfig: {
     logo: '/logo.svg',
