@@ -1145,3 +1145,86 @@ module.exports = {
   ]
 };
 ```
+
+---
+
+### 13. Webpack 和 Rollup 的区别？
+
+**答案：**
+
+| 特性 | Webpack | Rollup |
+|------|---------|--------|
+| **定位** | 应用程序打包 | 库/组件打包 |
+| **输出格式** | 主要是 bundle | ESM、CJS、UMD、IIFE |
+| **代码分割** | 强大 | 基础支持 |
+| **Tree Shaking** | 支持（ES Module） | 原生支持，更彻底 |
+| **HMR** | 内置支持 | 需要插件 |
+| **配置复杂度** | 较复杂 | 相对简单 |
+| **打包体积** | 有运行时代码 | 更小更干净 |
+| **生态** | 最丰富 | 相对较少 |
+
+**Webpack 适用场景：**
+- 复杂的单页应用（SPA）
+- 需要代码分割、懒加载
+- 需要处理各种静态资源
+- 需要 HMR 开发体验
+
+**Rollup 适用场景：**
+- npm 库/组件库打包
+- 需要输出多种模块格式
+- 追求最小的打包体积
+- 简单的项目
+
+**代码对比：**
+
+```javascript
+// Rollup 配置 - 更简洁
+export default {
+  input: 'src/index.js',
+  output: [
+    { file: 'dist/bundle.cjs.js', format: 'cjs' },
+    { file: 'dist/bundle.esm.js', format: 'es' },
+    { file: 'dist/bundle.umd.js', format: 'umd', name: 'MyLib' }
+  ],
+  plugins: [resolve(), commonjs(), babel()]
+};
+
+// Webpack 配置 - 更多选项
+module.exports = {
+  entry: './src/index.js',
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+    library: 'MyLib',
+    libraryTarget: 'umd'
+  },
+  module: {
+    rules: [
+      { test: /\.js$/, use: 'babel-loader' }
+    ]
+  }
+};
+```
+
+**打包结果对比：**
+
+```javascript
+// Rollup 输出 - 更干净
+const add = (a, b) => a + b;
+export { add };
+
+// Webpack 输出 - 包含运行时
+(function(modules) {
+  // webpack 运行时代码...
+})([
+  function(module, exports) {
+    const add = (a, b) => a + b;
+    module.exports = { add };
+  }
+]);
+```
+
+**现代趋势：**
+- **Vite** 开发用 ESBuild，生产用 Rollup
+- **库开发** 倾向于 Rollup
+- **应用开发** 倾向于 Webpack 或 Vite

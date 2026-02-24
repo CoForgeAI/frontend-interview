@@ -816,3 +816,631 @@ const resourceObserver = new PerformanceObserver((list) => {
 
 resourceObserver.observe({ entryTypes: ['resource'] });
 ```
+
+---
+
+### 12. SPA（单页应用）首屏加载速度慢怎么解决？
+
+**答案：**
+
+SPA（Single Page Application）首屏加载慢的主要原因是需要加载大量的 JavaScript 代码才能渲染页面。优化策略如下：
+
+---
+
+**一、资源优化**
+
+**1. 代码分割（Code Splitting）**
+
+```javascript
+// 路由懒加载
+const routes = [
+  {
+    path: '/home',
+    component: () => import('./views/Home.vue') // 懒加载
+  },
+  {
+    path: '/about',
+    component: () => import('./views/About.vue')
+  }
+];
+
+// React 懒加载
+import { lazy, Suspense } from 'react';
+
+const Home = lazy(() => import('./views/Home'));
+const About = lazy(() => import('./views/About'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Routes>
+        <Route path="/home" element={<Home />} />
+        <Route path="/about" element={<About />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
+// Webpack 动态导入
+button.addEventListener('click', async () => {
+  const module = await import('./heavy-module.js');
+  module.doSomething();
+});
+```
+
+**2. 第三方库按需引入**
+
+```javascript
+// ❌ 不好：全量引入
+import _ from 'lodash';
+import { Button, Table, Modal } from 'antd';
+
+// ✅ 好：按需引入
+import debounce from 'lodash/debounce';
+import Button from 'antd/es/button';
+
+// 使用 babel-plugin-import 自动按需引入
+// .babelrc
+{
+  "plugins": [
+    ["import", {
+      "libraryName": "antd",
+      "style": true
+    }]
+  ]
+}
+```
+
+**3. Tree Shaking**
+
+```javascript
+// package.json
+{
+  "sideEffects": false  // 或指定有副作用的文件
+}
+
+// 使用 ES6 模块语法（支持 Tree Shaking）
+export const add = (a, b) => a + b;
+export const subtract = (a, b) => a - b;
+
+// main.js
+import { add } from './utils'; // 只打包 add，subtract 会被 Tree Shaking 掉
+```
+
+**4. 压缩和混淆**
+
+```javascript
+// webpack.config.js
+const TerserPlugin = require('terser-webpack-plugin');
+
+module.exports = {
+  optimization: {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            drop_console: true,  // 移除 console
+            drop_debugger: true  // 移除 debugger
+          }
+        }
+      })
+    ]
+  }
+};
+```
+
+---
+
+**二、渲染优化**
+
+**1. 服务端渲染（SSR）**
+
+```javascript
+// Next.js 示例
+export async function getServerSideProps() {
+  const data = await fetchData();
+  return {
+    props: { data }
+  };
+}
+
+export default function Page({ data }) {
+  return <div>{data.title}</div>;
+}
+
+// Nuxt.js 示例
+export default {
+  async asyncData() {
+    const data = await fetchData();
+    return { data };
+  }
+};
+```
+
+**优点：**
+- 首屏直出 HTML，FCP 更快
+- SEO 友好
+- 减少客户端渲染时间
+
+**缺点：**
+- 服务器压力增大
+- 开发和部署复杂度提高
+
+**2. 静态站点生成（SSG）**
+
+```javascript
+// Next.js 静态生成
+export async function getStaticProps() {
+  const data = await fetchData();
+  return {
+    props: { data },
+    revalidate: 3600  // ISR：每小时重新生成
+  };
+}
+
+// Gatsby 示例
+export const query = graphql`
+  query {
+    allMarkdownRemark {
+      nodes {
+        frontmatter {
+          title
+        }
+      }
+    }
+  }
+`;
+```
+
+**适用场景：**
+- 内容不频繁变化的页面
+- 博客、文档站点、营销页面
+
+**3. 预渲染（Prerendering）**
+
+```javascript
+// prerender-spa-plugin
+const PrerenderSPAPlugin = require('prerender-spa-plugin');
+
+module.exports = {
+  plugins: [
+    new PrerenderSPAPlugin({
+      routes: ['/', '/about', '/contact'],
+      staticDir: path.join(__dirname, 'dist')
+    })
+  ]
+};
+```
+
+**4. 骨架屏（Skeleton Screen）**
+
+```html
+<!-- index.html -->
+<div id="app">
+  <div class="skeleton">
+    <div class="skeleton-header"></div>
+    <div class="skeleton-content">
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line short"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+.skeleton {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.skeleton-line {
+  height: 16px;
+  margin: 10px 0;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s ease-in-out infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+</style>
+```
+
+**5. Loading 状态优化**
+
+```javascript
+// 显示加载进度
+import NProgress from 'nprogress';
+
+router.beforeEach((to, from, next) => {
+  NProgress.start();
+  next();
+});
+
+router.afterEach(() => {
+  NProgress.done();
+});
+```
+
+---
+
+**三、资源加载优化**
+
+**1. 关键资源优先加载**
+
+```html
+<!-- 预加载关键资源 -->
+<link rel="preload" href="/app.js" as="script">
+<link rel="preload" href="/main.css" as="style">
+<link rel="preload" href="/font.woff2" as="font" crossorigin>
+
+<!-- DNS 预解析 -->
+<link rel="dns-prefetch" href="//api.example.com">
+
+<!-- 预连接 -->
+<link rel="preconnect" href="https://cdn.example.com">
+
+<!-- 预获取（空闲时加载） -->
+<link rel="prefetch" href="/next-page.js">
+```
+
+**2. 内联关键 CSS**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- 关键 CSS 内联 -->
+  <style>
+    /* 首屏必需的样式 */
+    body { margin: 0; font-family: sans-serif; }
+    .header { height: 60px; background: #333; }
+    .loading { text-align: center; padding: 50px; }
+  </style>
+
+  <!-- 非关键 CSS 异步加载 -->
+  <link rel="preload" href="/main.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="/main.css"></noscript>
+</head>
+</html>
+```
+
+**3. 图片优化**
+
+```html
+<!-- 懒加载 -->
+<img src="placeholder.jpg" data-src="real-image.jpg" loading="lazy" alt="">
+
+<!-- 响应式图片 -->
+<img srcset="small.jpg 480w, medium.jpg 800w, large.jpg 1200w"
+     sizes="(max-width: 600px) 480px, 800px"
+     src="medium.jpg" alt="">
+
+<!-- WebP 格式 -->
+<picture>
+  <source srcset="image.webp" type="image/webp">
+  <source srcset="image.jpg" type="image/jpeg">
+  <img src="image.jpg" alt="">
+</picture>
+```
+
+**4. CDN 加速**
+
+```javascript
+// 第三方库使用 CDN
+// index.html
+<script src="https://cdn.jsdelivr.net/npm/vue@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18"></script>
+
+// webpack externals
+module.exports = {
+  externals: {
+    vue: 'Vue',
+    react: 'React',
+    'react-dom': 'ReactDOM'
+  }
+};
+```
+
+---
+
+**四、缓存策略**
+
+**1. HTTP 缓存**
+
+```nginx
+# nginx 配置
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
+    # 静态资源强缓存 1 年
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+
+location ~* \.(html)$ {
+    # HTML 协商缓存
+    add_header Cache-Control "no-cache";
+}
+```
+
+**2. Service Worker 缓存**
+
+```javascript
+// service-worker.js
+const CACHE_NAME = 'my-app-v1';
+const urlsToCache = [
+  '/',
+  '/app.js',
+  '/main.css',
+  '/logo.png'
+];
+
+// 安装时缓存
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(urlsToCache);
+    })
+  );
+});
+
+// 请求时优先从缓存读取
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
+  );
+});
+```
+
+**3. LocalStorage 缓存**
+
+```javascript
+// 缓存 API 数据
+async function fetchWithCache(url, ttl = 3600000) {
+  const cached = localStorage.getItem(url);
+  if (cached) {
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp < ttl) {
+      return data;
+    }
+  }
+
+  const data = await fetch(url).then(res => res.json());
+  localStorage.setItem(url, JSON.stringify({
+    data,
+    timestamp: Date.now()
+  }));
+  return data;
+}
+```
+
+---
+
+**五、构建优化**
+
+**1. 分包策略**
+
+```javascript
+// webpack.config.js
+module.exports = {
+  optimization: {
+    splitChunks: {
+      chunks: 'all',
+      cacheGroups: {
+        // 提取第三方库
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          priority: 10
+        },
+        // 提取公共代码
+        common: {
+          minChunks: 2,
+          name: 'common',
+          priority: 5
+        }
+      }
+    },
+    // 提取 runtime
+    runtimeChunk: {
+      name: 'runtime'
+    }
+  }
+};
+```
+
+**2. Gzip / Brotli 压缩**
+
+```javascript
+// webpack 配置
+const CompressionPlugin = require('compression-webpack-plugin');
+
+module.exports = {
+  plugins: [
+    new CompressionPlugin({
+      algorithm: 'gzip',
+      test: /\.(js|css|html|svg)$/,
+      threshold: 10240,  // 只压缩大于 10KB 的文件
+      minRatio: 0.8
+    })
+  ]
+};
+
+// nginx 配置
+gzip on;
+gzip_types text/plain text/css application/json application/javascript;
+gzip_min_length 1024;
+```
+
+**3. 去除无用代码**
+
+```javascript
+// .babelrc
+{
+  "presets": [
+    ["@babel/preset-env", {
+      "modules": false,  // 保留 ES6 模块，支持 Tree Shaking
+      "useBuiltIns": "usage",  // 按需引入 polyfill
+      "corejs": 3
+    }]
+  ]
+}
+```
+
+---
+
+**六、网络优化**
+
+**1. HTTP/2**
+
+```nginx
+# nginx 配置
+server {
+    listen 443 ssl http2;
+    # 启用 HTTP/2 多路复用
+}
+```
+
+**优势：**
+- 多路复用，减少 TCP 连接数
+- 头部压缩
+- 服务器推送
+
+**2. 减少请求数量**
+
+```javascript
+// 合并小图标为雪碧图或使用 iconfont
+// 使用 SVG Sprite
+<svg>
+  <use xlink:href="#icon-home"></use>
+</svg>
+
+// 小图片转 Base64
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.(png|jpg|gif)$/,
+        type: 'asset',
+        parser: {
+          dataUrlCondition: {
+            maxSize: 8 * 1024  // 小于 8KB 转 Base64
+          }
+        }
+      }
+    ]
+  }
+};
+```
+
+**3. 接口聚合**
+
+```javascript
+// ❌ 不好：多个请求
+const user = await fetch('/api/user');
+const posts = await fetch('/api/posts');
+const comments = await fetch('/api/comments');
+
+// ✅ 好：聚合接口
+const data = await fetch('/api/dashboard');  // 一次返回所有数据
+```
+
+---
+
+**七、监控和分析**
+
+**1. 性能监控**
+
+```javascript
+// 监控首屏时间
+window.addEventListener('load', () => {
+  const timing = performance.timing;
+  const loadTime = timing.loadEventEnd - timing.navigationStart;
+  const domReadyTime = timing.domContentLoadedEventEnd - timing.navigationStart;
+
+  console.log('页面加载时间:', loadTime);
+  console.log('DOM Ready 时间:', domReadyTime);
+
+  // 上报到监控平台
+  sendToAnalytics({
+    loadTime,
+    domReadyTime,
+    url: location.href
+  });
+});
+```
+
+**2. 使用工具分析**
+
+```bash
+# Lighthouse 分析
+lighthouse https://example.com --output html --output-path ./report.html
+
+# Webpack Bundle Analyzer
+npm install --save-dev webpack-bundle-analyzer
+
+# webpack.config.js
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+
+module.exports = {
+  plugins: [
+    new BundleAnalyzerPlugin()
+  ]
+};
+```
+
+---
+
+**优化方案对比：**
+
+| 方案 | 优化效果 | 实现难度 | 适用场景 |
+|------|---------|---------|---------|
+| 代码分割 | ⭐⭐⭐⭐⭐ | 简单 | 所有 SPA |
+| SSR | ⭐⭐⭐⭐⭐ | 困难 | SEO 要求高、首屏要求快 |
+| SSG | ⭐⭐⭐⭐⭐ | 中等 | 内容不频繁变化 |
+| 预渲染 | ⭐⭐⭐⭐ | 简单 | 静态页面少 |
+| 骨架屏 | ⭐⭐⭐ | 简单 | 改善视觉体验 |
+| CDN | ⭐⭐⭐⭐ | 简单 | 所有应用 |
+| HTTP/2 | ⭐⭐⭐ | 简单 | 需要 HTTPS |
+| Service Worker | ⭐⭐⭐⭐ | 中等 | PWA 应用 |
+
+---
+
+**完整优化 Checklist：**
+
+- [ ] 启用路由懒加载
+- [ ] 第三方库按需引入
+- [ ] 配置 Tree Shaking
+- [ ] 代码压缩和混淆
+- [ ] 使用 Gzip / Brotli 压缩
+- [ ] 图片懒加载和 WebP 格式
+- [ ] 静态资源使用 CDN
+- [ ] 配置 HTTP 缓存策略
+- [ ] 实现骨架屏或 Loading 状态
+- [ ] 内联关键 CSS
+- [ ] 预加载关键资源
+- [ ] 考虑 SSR / SSG / 预渲染
+- [ ] 使用 Service Worker 缓存
+- [ ] 启用 HTTP/2
+- [ ] 监控和分析性能指标
+
+---
+
+**总结：**
+
+SPA 首屏优化的核心思路是：
+1. **减少首屏加载的资源量**（代码分割、按需引入、Tree Shaking）
+2. **提升资源加载速度**（CDN、HTTP/2、压缩）
+3. **优化渲染方式**（SSR、SSG、预渲染）
+4. **改善用户感知**（骨架屏、Loading、渐进式渲染）
+5. **利用缓存**（HTTP 缓存、Service Worker、LocalStorage）
+
+根据项目实际情况，选择合适的优化方案组合，通常可以将首屏时间从 3-5s 优化到 1-2s 以内。

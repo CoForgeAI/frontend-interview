@@ -9,6 +9,8 @@ export default defineConfig({
     ['link', { rel: 'icon', href: '/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#3eaf7c' }],
     ['meta', { name: 'keywords', content: '前端面试,JavaScript,Vue,React,TypeScript,CSS,HTML' }],
+    // 防止搜索引擎索引
+    ['meta', { name: 'robots', content: 'noindex, nofollow' }],
   ],
 
   // 如果部署到 GitHub Pages 的子路径，需要设置 base
@@ -121,6 +123,16 @@ export default defineConfig({
           items: [
             { text: 'Node.js', link: '/docs/15-NodeJS' },
             { text: '工程化实践', link: '/docs/16-Engineering' },
+          ]
+        },
+        {
+          text: '📝 笔记',
+          collapsed: false,
+          items: [
+            { text: 'Git 操作指南', link: '/docs/Git操作指南' },
+            { text: 'GitLab CI/CD 部署', link: '/docs/GitLab-CICD-部署指南' },
+            { text: '部署笔记', link: '/docs/部署笔记' },
+            { text: '个人笔记', link: '/docs/个人笔记' },
           ]
         },
       ]
